@@ -1,0 +1,23 @@
+[project]
+name = "rag-poc"
+version = "0.1.0"
+description = "RAG POC with LangChain, FAISS, Docling, and Azure OpenAI"
+requires-python = ">=3.12"
+dependencies = [
+    "langchain",
+    "langchain-community",
+    "langchain-openai",
+    "faiss-cpu",
+    "python-dotenv",
+    "openai",
+    "tiktoken",
+    "beautifulsoup4",
+    "lxml",
+    "numpy",
+    "pypdf2>=3.0.1",
+    # Docling with macOS Intel x86_64 support
+    "torch==2.2.2",
+    "torchvision==0.17.2", 
+    "docling",
+    "pandas",
+]
