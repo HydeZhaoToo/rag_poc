@@ -35,22 +35,24 @@ FAISS 向量数据库 (相似度搜索和文档召回)
 ```
 RAG_POC/
 ├── src/rag_poc/
-│   ├── rag_pipeline.py                 # 主管道（设备切换逻辑）
-│   ├── document_processing/            # 文档处理模块
-│   │   ├── enhanced_docling_converter.py     # CPU模式：增强版Docling
-│   │   ├── macos_ocr_converter.py            # macOS模式：原生OCR
-│   │   ├── docling_mps_converter.py          # MPS模式：GPU加速
-│   │   └── simple_pdf_converter.py           # 后备方案：简单PDF
-│   ├── text_splitting/                # 文本分割模块
-│   │   ├── html_splitter.py           # HTML智能分割
-│   │   └── text_processor.py          # 文本预处理
-│   └── vector_store/                  # 向量存储模块
-│       ├── faiss_store.py             # FAISS数据库
-│       └── embedding_manager.py       # 向量化管理
-└── tools/                             # 辅助工具
-    ├── verify_macos_ocr.py           # OCR验证工具
-    ├── test_all_modes.py             # 全模式测试
-    └── configure_pip_mirrors.py      # 镜像配置工具
+│   ├── rag_pipeline.py                      # 主管道（设备切换逻辑）
+│   ├── document_processing/                 # 文档处理模块
+│   │   ├── macos_ocr_converter.py          # macOS模式：原生Apple Vision OCR
+│   │   ├── docling_mps_converter.py        # MPS模式：GPU加速处理
+│   │   ├── enhanced_docling_converter.py   # CPU模式：生产级增强Docling
+│   │   ├── document_converter.py           # 基础Docling转换器
+│   │   ├── simple_pdf_converter.py         # 轻量级PDF处理器
+│   │   └── html_splitter.py                # 语义HTML分割器
+│   ├── embedding/                           # 向量化模块
+│   │   └── azure_openai_embeddings.py      # Azure OpenAI向量化
+│   └── vectorstore/                         # 向量存储模块
+│       └── faiss_store.py                   # FAISS向量数据库
+└── tools/                                   # 测试和验证工具
+    ├── test_all_modes.py                   # 全模式集成测试
+    ├── test_refactored_macos_ocr.py        # macOS OCR专项测试
+    ├── test_macos_ocr.py                   # 传统OCR测试
+    ├── test_mps.py                         # MPS性能测试
+    └── configure_pip_mirrors.py            # 镜像配置工具
 ```
 
 ## 🚀 快速开始
@@ -300,14 +302,17 @@ for file in data/input/*.pdf; do
 done
 ```
 
-### 2. OCR 效果验证
+### 2. 文档处理效果验证
 
 ```bash
 # 验证 macOS OCR 提取效果
-python verify_macos_ocr.py
+python test_refactored_macos_ocr.py
 
 # 比较不同处理方式
 python test_all_modes.py
+
+# 性能基准测试
+python test_mps.py
 ```
 
 ### 3. 镜像源管理
@@ -384,14 +389,37 @@ python configure_pip_mirrors.py config aliyun
 ### 测试套件
 
 ```bash
-# 运行完整测试
+# 🧪 基本功能验证（推荐首先运行）
+python test_basic_functionality.py
+
+# 📖 命令行接口测试
+python test_main_commands.py
+
+# 🔄 全模式转换器测试
 python test_all_modes.py
 
-# 验证 OCR 效果
-python verify_macos_ocr.py
+# 🍎 macOS OCR专项测试
+python test_refactored_macos_ocr.py
 
-# 测试连接
+# ⚡ 性能基准测试
+python test_mps.py
+
+# 🔗 测试Azure OpenAI连接
 python main.py test-connection
+```
+
+### 快速验证
+
+如果你想快速验证系统是否正常工作，运行以下命令：
+
+```bash
+# 第一步：验证基本功能
+python test_basic_functionality.py
+
+# 第二步：验证命令行接口
+python test_main_commands.py
+
+# 如果以上两个测试都通过，系统基本可用
 ```
 
 ### 调试模式
@@ -408,12 +436,35 @@ python main.py --device macos build -f document.pdf --verbose
 
 #### 1. SSL 证书验证失败
 
+**问题描述**: Docling转换器初始化时出现SSL证书错误
+```
+certificate verify failed: Hostname mismatch, certificate is not valid for 'huggingface.co'
+```
+
+**解决方案**（按推荐程度排序）:
+
 ```bash
-# 解决方案1：使用 macOS OCR（无网络要求）
+# 方案1：使用SimplePDFConverter（推荐，无网络要求）
+python main.py --device cpu build -f document.pdf
+# 注意：SimplePDFConverter仅支持文本型PDF，不支持OCR
+
+# 方案2：设置环境变量禁用SSL验证
+export PYTHONHTTPSVERIFY=0
+python main.py --device cpu build -f document.pdf
+
+# 方案3：使用macOS原生OCR（仅macOS）
+python main.py --device macos build -f document.pdf
+```
+
+#### 0. **重要**: 命令行参数顺序
+
+**正确的命令格式**:
+```bash
+# ✅ 正确：--device 参数在子命令之前
 python main.py --device macos build -f document.pdf
 
-# 解决方案2：设置环境变量
-export PYTHONHTTPSVERIFY=0
+# ❌ 错误：--device 参数在子命令之后
+python main.py build --device macos -f document.pdf
 ```
 
 #### 2. PyTorch 版本问题

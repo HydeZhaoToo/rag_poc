@@ -65,7 +65,7 @@ def test_converter_initialization():
     # Test Enhanced Docling
     try:
         from rag_poc.document_processing.enhanced_docling_converter import EnhancedDoclingConverter
-        converter = EnhancedDoclingConverter(use_ocr=False)  # No OCR to avoid downloads
+        converter = EnhancedDoclingConverter()
         results['enhanced_docling'] = "✅ Enhanced Docling 初始化成功"
     except Exception as e:
         results['enhanced_docling'] = f"❌ Enhanced Docling 初始化失败: {str(e)[:100]}..."
@@ -78,6 +78,22 @@ def test_converter_initialization():
     except Exception as e:
         results['macos_ocr'] = f"❌ macOS OCR 初始化失败: {str(e)[:100]}..."
     
+    # Test Docling MPS
+    try:
+        from rag_poc.document_processing.docling_mps_converter import DoclingMPSConverter
+        converter = DoclingMPSConverter()
+        results['docling_mps'] = "✅ Docling MPS 初始化成功"
+    except Exception as e:
+        results['docling_mps'] = f"❌ Docling MPS 初始化失败: {str(e)[:100]}..."
+    
+    # Test Document Converter
+    try:
+        from rag_poc.document_processing.document_converter import DocumentToHTMLConverter
+        converter = DocumentToHTMLConverter()
+        results['document_converter'] = "✅ Document Converter 初始化成功"
+    except Exception as e:
+        results['document_converter'] = f"❌ Document Converter 初始化失败: {str(e)[:100]}..."
+    
     # Test Simple PDF
     try:
         from rag_poc.document_processing.simple_pdf_converter import SimplePDFConverter
@@ -85,6 +101,14 @@ def test_converter_initialization():
         results['simple_pdf'] = "✅ Simple PDF 初始化成功"
     except Exception as e:
         results['simple_pdf'] = f"❌ Simple PDF 初始化失败: {str(e)[:100]}..."
+    
+    # Test HTML Splitter
+    try:
+        from rag_poc.document_processing.html_splitter import HTMLDocumentSplitter
+        splitter = HTMLDocumentSplitter(chunk_size=300, chunk_overlap=50)
+        results['html_splitter'] = "✅ HTML Splitter 初始化成功"
+    except Exception as e:
+        results['html_splitter'] = f"❌ HTML Splitter 初始化失败: {str(e)[:100]}..."
     
     print("\n📋 初始化测试结果:")
     for component, status in results.items():
@@ -112,16 +136,16 @@ def test_document_conversion():
         start_time = time.time()
         
         converter = SimplePDFConverter()
-        output_file = converter.convert_file(test_file, "data/output/test_simple")
+        html_content = converter.convert_to_html(test_file)
         
         end_time = time.time()
         duration = end_time - start_time
         
-        if os.path.exists(output_file):
-            file_size = os.path.getsize(output_file)
-            results['simple_pdf'] = f"✅ 转换成功 ({duration:.1f}s, {file_size:,} bytes)"
+        if html_content and len(html_content) > 100:
+            content_size = len(html_content)
+            results['simple_pdf'] = f"✅ 转换成功 ({duration:.1f}s, {content_size:,} chars)"
         else:
-            results['simple_pdf'] = "❌ 输出文件未生成"
+            results['simple_pdf'] = "❌ 转换内容为空或过短"
             
     except Exception as e:
         results['simple_pdf'] = f"❌ 转换失败: {str(e)[:100]}..."
@@ -134,19 +158,41 @@ def test_document_conversion():
         start_time = time.time()
         
         converter = MacOSOCRConverter()
-        output_file = converter.convert_file(test_file, "data/output/test_macos_ocr")
+        html_content = converter.convert_to_html(test_file)
         
         end_time = time.time()
         duration = end_time - start_time
         
-        if os.path.exists(output_file):
-            file_size = os.path.getsize(output_file)
-            results['macos_ocr'] = f"✅ 转换成功 ({duration:.1f}s, {file_size:,} bytes)"
+        if html_content and len(html_content) > 100:
+            content_size = len(html_content)
+            results['macos_ocr'] = f"✅ 转换成功 ({duration:.1f}s, {content_size:,} chars)"
         else:
-            results['macos_ocr'] = "❌ 输出文件未生成"
+            results['macos_ocr'] = "❌ 转换内容为空或过短"
             
     except Exception as e:
         results['macos_ocr'] = f"❌ 转换失败: {str(e)[:100]}..."
+    
+    # Test Enhanced Docling (需要网络，可能会失败)
+    try:
+        from rag_poc.document_processing.enhanced_docling_converter import EnhancedDoclingConverter
+        
+        print(f"\n🔄 测试 Enhanced Docling 转换...")
+        start_time = time.time()
+        
+        converter = EnhancedDoclingConverter()
+        html_content = converter.convert_to_html(test_file)
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        if html_content and len(html_content) > 100:
+            content_size = len(html_content)
+            results['enhanced_docling'] = f"✅ 转换成功 ({duration:.1f}s, {content_size:,} chars)"
+        else:
+            results['enhanced_docling'] = "❌ 转换内容为空或过短"
+            
+    except Exception as e:
+        results['enhanced_docling'] = f"❌ 转换失败: {str(e)[:100]}..."
     
     print("\n📋 转换测试结果:")
     for component, status in results.items():

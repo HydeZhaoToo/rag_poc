@@ -267,3 +267,55 @@ class MacOSOCRConverter:
                 info["docling_version"] = 'unknown'
         
         return info
+    
+    def convert_to_html(self, file_path: str) -> str:
+        """
+        Convert document to HTML content (without saving to file)
+        
+        Args:
+            file_path: Path to input document
+            
+        Returns:
+            HTML content as string
+        """
+        if not self.is_supported_format(file_path):
+            raise ValueError(f"File format not supported: {file_path}")
+        
+        input_path = Path(file_path)
+        if not input_path.exists():
+            raise FileNotFoundError(f"Input file not found: {file_path}")
+        
+        try:
+            # Convert using Docling
+            conv_result = self.converter.convert(input_path)
+            html_content = conv_result.document.export_to_html()
+            print(f"✅ Docling macOS OCR conversion successful: {file_path}")
+            return html_content
+            
+        except Exception as e:
+            print(f"⚠️  Docling conversion failed for {file_path}: {str(e)}")
+            
+            # Try fallback for PDFs
+            if input_path.suffix.lower() == '.pdf' and PyPDF2:
+                try:
+                    fallback_text = self._fallback_extract_pdf_text(str(input_path))
+                    if fallback_text:
+                        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>{input_path.stem}</title>
+    <meta charset='utf-8'>
+</head>
+<body>
+    <h1>{input_path.stem}</h1>
+    <div class='content'>
+        {''.join(f'<p>{para}</p>' for para in fallback_text.split('\n\n') if para.strip())}
+    </div>
+</body>
+</html>"""
+                        print(f"✅ PyPDF2 fallback conversion successful: {file_path}")
+                        return html_content
+                except Exception as fallback_e:
+                    print(f"❌ PyPDF2 fallback also failed: {str(fallback_e)}")
+            
+            raise Exception(f"All conversion methods failed for {file_path}: {str(e)}")

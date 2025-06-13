@@ -156,3 +156,28 @@ class SimplePDFConverter:
         """Check if file format is supported"""
         file_extension = Path(file_path).suffix.lower()
         return file_extension in self.supported_formats
+    
+    def convert_to_html(self, file_path: str) -> str:
+        """
+        Convert PDF file to HTML content (without saving to file)
+        
+        Args:
+            file_path: Path to PDF file
+            
+        Returns:
+            HTML content as string
+        """
+        if not self.is_supported_format(file_path):
+            raise ValueError(f"File format not supported: {file_path}")
+        
+        pdf_path = Path(file_path)
+        if not pdf_path.exists():
+            raise FileNotFoundError(f"PDF file not found: {file_path}")
+        
+        # Extract text from PDF
+        text_content = self._extract_text_from_pdf(pdf_path)
+        
+        # Convert to HTML
+        html_content = self._text_to_html(text_content, pdf_path.stem)
+        
+        return html_content

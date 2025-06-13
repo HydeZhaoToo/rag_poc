@@ -100,6 +100,42 @@ class HTMLDocumentSplitter:
         
         return html_docs
     
+    def split_documents(self, html_content: str, source_name: str = "unknown") -> List[Document]:
+        """
+        Alias for split_html_content for compatibility
+        
+        Args:
+            html_content: HTML content string
+            source_name: Name of the source document
+            
+        Returns:
+            List of Document objects
+        """
+        return self.split_html_content(html_content, source_name)
+    
+    def batch_split_documents(self, html_contents: List[str], source_files: List[str]) -> List[Document]:
+        """
+        Split multiple HTML contents in batch
+        
+        Args:
+            html_contents: List of HTML content strings
+            source_files: List of source file names
+            
+        Returns:
+            List of all Document objects from all contents
+        """
+        all_docs = []
+        
+        for html_content, source_file in zip(html_contents, source_files):
+            try:
+                docs = self.split_html_content(html_content, source_file)
+                all_docs.extend(docs)
+            except Exception as e:
+                print(f"Error splitting {source_file}: {str(e)}")
+                continue
+        
+        return all_docs
+    
     def split_multiple_files(self, html_file_paths: List[str]) -> List[Document]:
         """
         Split multiple HTML files
