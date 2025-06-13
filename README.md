@@ -1,4 +1,4 @@
-# RAG 验证程序 - AI辅助软件交付文档处理系统
+# RAG 验证程序
 
 这是一个基于 LangChain 和 FAISS 的 RAG (Retrieval-Augmented Generation) 验证程序，专门用于处理和搜索软件交付相关文档。本项目实现了完整的文档处理和向量搜索系统，支持多种文档格式和处理模式，特别针对中文文档进行了优化。
 
