@@ -1,120 +1,116 @@
 """
-macOS native OCR document converter using Vision framework
+macOS native OCR document converter using Docling with OcrMacOptions
+Utilizes Apple's Vision framework through docling's OcrMacOptions integration
 """
 
-import os
 import sys
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import List, Optional
-import json
+
+try:
+    from docling.document_converter import DocumentConverter
+    from docling.datamodel.pipeline_options import PipelineOptions, EasyOcrOptions
+    from docling.datamodel.base_models import DocInputType
+    DOCLING_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  Docling not available: {e}")
+    DOCLING_AVAILABLE = False
+
+# Try to import OcrMacOptions, but fall back to EasyOcrOptions if not available
+try:
+    from docling.models.ocr_mac_model import OcrMacOptions
+    OCRMAC_AVAILABLE = True
+except ImportError:
+    print("⚠️  OcrMacOptions not available, using EasyOcrOptions with macOS optimization")
+    OCRMAC_AVAILABLE = False
+
 try:
     import PyPDF2
 except ImportError:
     PyPDF2 = None
 
+
 class MacOSOCRConverter:
-    """Convert documents using macOS native OCR capabilities"""
+    """Convert documents using Docling with macOS Vision framework OCR"""
     
-    def __init__(self):
-        """Initialize macOS OCR converter"""
+    def __init__(self, force_full_page_ocr: bool = True, lang: List[str] = None):
+        """Initialize macOS OCR converter with Docling and OcrMacOptions
+        
+        Args:
+            force_full_page_ocr: Whether to force OCR on entire page (default: True)
+            lang: Languages for OCR (default: ['en-US', 'zh-Hans', 'zh-Hant'])
+        """
         self.supported_formats = [
-            '.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.gif'
+            '.pdf', '.docx', '.doc', '.pptx', '.ppt', 
+            '.html', '.htm', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.gif'
         ]
         
         # Check if running on macOS
         if sys.platform != 'darwin':
             raise RuntimeError("macOS OCR converter only works on macOS")
         
-        # Check macOS version (Vision framework requires macOS 10.13+)
-        try:
-            version_result = subprocess.run(['sw_vers', '-productVersion'], 
-                                          capture_output=True, text=True, check=True)
-            version = version_result.stdout.strip()
-            major_version = int(version.split('.')[0])
-            minor_version = int(version.split('.')[1]) if len(version.split('.')) > 1 else 0
+        if not DOCLING_AVAILABLE:
+            raise RuntimeError("Docling not available. Please install docling.")
             
-            if major_version < 10 or (major_version == 10 and minor_version < 13):
-                raise RuntimeError("macOS OCR requires macOS 10.13 or later")
-                
-            print(f"✅ macOS {version} detected - Vision framework available")
+        # Note: OcrMacOptions may not be available in all docling installations
+        # We'll use EasyOcrOptions as fallback with macOS optimization
+        
+        # Set default languages (prioritize English and Chinese)
+        self.lang = lang or ['en-US', 'zh-Hans', 'zh-Hant', 'fr-FR', 'de-DE', 'es-ES']
+        self.force_full_page_ocr = force_full_page_ocr
+        
+        # Initialize Docling converter with macOS OCR options
+        self.converter = self._initialize_converter()
+        
+        print(f"✅ macOS OCR converter initialized with Docling")
+        print(f"   Force full page OCR: {self.force_full_page_ocr}")
+        print(f"   Languages: {self.lang}")
+    
+    def _initialize_converter(self) -> DocumentConverter:
+        """Initialize DocumentConverter with macOS OCR options"""
+        try:
+            # Try to use OcrMacOptions if available, otherwise use EasyOcrOptions
+            if OCRMAC_AVAILABLE:
+                print("🍎 Using OcrMacOptions with Apple Vision framework")
+                ocr_options = OcrMacOptions(
+                    force_full_page_ocr=self.force_full_page_ocr,
+                    lang=self.lang
+                )
+            else:
+                print("🔄 Using EasyOcrOptions with macOS optimization")
+                # Use EasyOCR but optimize for macOS by not using GPU (more stable)
+                ocr_lang = ['en', 'ch_sim']  # EasyOCR language codes (English + Simplified Chinese)
+                ocr_options = EasyOcrOptions(
+                    lang=ocr_lang,
+                    use_gpu=False,  # Use CPU for stability on macOS
+                    download_enabled=True
+                )
+            
+            # Configure pipeline options
+            pipeline_options = PipelineOptions(
+                do_ocr=True,
+                do_table_structure=True,
+                ocr_options=ocr_options
+            )
+            
+            # Initialize converter with pipeline options
+            converter = DocumentConverter(
+                pipeline_options=pipeline_options
+            )
+            
+            print("✅ Docling DocumentConverter with macOS OCR initialized")
+            return converter
             
         except Exception as e:
-            raise RuntimeError(f"Failed to check macOS version: {e}")
+            raise RuntimeError(f"Failed to initialize macOS OCR converter: {e}")
     
-    def _create_swift_ocr_script(self) -> str:
-        """Create Swift script for OCR processing"""
-        swift_script = '''
-import Foundation
-import Vision
-import CoreImage
-import ImageIO
-
-func performOCR(on imagePath: String) -> String? {
-    guard let url = URL(string: "file://" + imagePath),
-          let cgImageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
-          let cgImage = CGImageSourceCreateImageAtIndex(cgImageSource, 0, nil) else {
-        print("Error: Could not load image from path: \\(imagePath)")
-        return nil
-    }
-    
-    let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-    let request = VNRecognizeTextRequest()
-    
-    // Configure for better accuracy
-    request.recognitionLevel = .accurate
-    request.usesLanguageCorrection = true
-    
-    // Support multiple languages including Chinese
-    request.recognitionLanguages = ["en-US", "zh-Hans", "zh-Hant"]
-    
-    var recognizedText = ""
-    
-    do {
-        try requestHandler.perform([request])
-        
-        guard let observations = request.results else {
-            print("No text recognition results")
-            return nil
-        }
-        
-        for observation in observations {
-            guard let topCandidate = observation.topCandidates(1).first else { continue }
-            recognizedText += topCandidate.string + "\\n"
-        }
-        
-    } catch {
-        print("Error performing OCR: \\(error)")
-        return nil
-    }
-    
-    return recognizedText.isEmpty ? nil : recognizedText
-}
-
-// Main execution
-guard CommandLine.arguments.count >= 2 else {
-    print("Usage: swift script.swift <image_path>")
-    exit(1)
-}
-
-let imagePath = CommandLine.arguments[1]
-
-if let text = performOCR(on: imagePath) {
-    print(text)
-} else {
-    print("No text found in image")
-    exit(1)
-}
-'''
-        return swift_script
-    
-    def _try_extract_pdf_text(self, pdf_path: str) -> Optional[str]:
-        """Try to extract text directly from PDF before using OCR"""
+    def _fallback_extract_pdf_text(self, pdf_path: str) -> Optional[str]:
+        """Fallback: Try to extract text directly from PDF using PyPDF2"""
         if not PyPDF2:
             return None
         
         try:
+            print("🔄 Attempting PyPDF2 fallback extraction...")
             with open(pdf_path, 'rb') as file:
                 pdf_reader = PyPDF2.PdfReader(file)
                 all_text = []
@@ -128,97 +124,17 @@ if let text = performOCR(on: imagePath) {
                     extracted_text = "\n".join(all_text)
                     # Check if we got meaningful text (not just symbols/gibberish)
                     if len(extracted_text.replace('<', '').replace('>', '').replace('h2', '').replace('div', '').replace('p', '').replace('/', '').strip()) > 100:
-                        print("✅ Successfully extracted text directly from PDF")
+                        print("✅ PyPDF2 fallback extraction successful")
                         return extracted_text
                 
         except Exception as e:
-            print(f"⚠️  Direct PDF text extraction failed: {e}")
+            print(f"⚠️  PyPDF2 fallback extraction failed: {e}")
         
         return None
-
-    def _pdf_to_images(self, pdf_path: str, output_dir: str) -> List[str]:
-        """Convert PDF pages to images using sips (macOS built-in tool)"""
-        pdf_path_obj = Path(pdf_path)
-        output_dir_obj = Path(output_dir)
-        output_dir_obj.mkdir(parents=True, exist_ok=True)
-        
-        image_files = []
-        
-        try:
-            # Get number of pages using mdls
-            result = subprocess.run(['mdls', '-name', 'kMDItemNumberOfPages', pdf_path], 
-                                  capture_output=True, text=True, check=True)
-            
-            # Parse the output to get page count
-            page_count = 1
-            if 'kMDItemNumberOfPages' in result.stdout:
-                try:
-                    page_count = int(result.stdout.split('=')[1].strip())
-                except:
-                    page_count = 1
-            
-            print(f"Converting PDF with {page_count} pages to images...")
-            
-            # Convert each page to PNG using sips
-            for page_num in range(1, page_count + 1):
-                output_file = output_dir_obj / f"{pdf_path_obj.stem}_page_{page_num:03d}.png"
-                
-                # Use sips to convert PDF page to PNG
-                cmd = [
-                    'sips', '-s', 'format', 'png',
-                    '-s', 'dpiWidth', '300',
-                    '-s', 'dpiHeight', '300',
-                    pdf_path,
-                    '--out', str(output_file)
-                ]
-                
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                
-                if result.returncode == 0 and output_file.exists():
-                    image_files.append(str(output_file))
-                    print(f"✅ Page {page_num} converted: {output_file.name}")
-                else:
-                    print(f"⚠️  Failed to convert page {page_num}")
-            
-        except Exception as e:
-            print(f"Error converting PDF to images: {e}")
-        
-        return image_files
-    
-    def _ocr_image(self, image_path: str) -> str:
-        """Perform OCR on a single image using macOS Vision framework"""
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.swift', delete=False) as f:
-            f.write(self._create_swift_ocr_script())
-            script_path = f.name
-        
-        try:
-            # Run Swift script for OCR
-            result = subprocess.run(['swift', script_path, image_path], 
-                                  capture_output=True, text=True, timeout=60)
-            
-            if result.returncode == 0:
-                return result.stdout.strip()
-            else:
-                print(f"OCR failed for {image_path}: {result.stderr}")
-                return ""
-                
-        except subprocess.TimeoutExpired:
-            print(f"OCR timeout for {image_path}")
-            return ""
-        except Exception as e:
-            print(f"OCR error for {image_path}: {e}")
-            return ""
-        finally:
-            # Clean up script file
-            try:
-                os.unlink(script_path)
-            except:
-                pass
     
     def convert_file(self, file_path: str, output_dir: Optional[str] = None) -> str:
         """
-        Convert a single file to HTML using macOS OCR
+        Convert a single file to HTML using macOS OCR via Docling
         
         Args:
             file_path: Path to the input file
@@ -242,42 +158,30 @@ if let text = performOCR(on: imagePath) {
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
         
-        print(f"Converting {input_path.name} using macOS OCR...")
+        print(f"Converting {input_path.name} using Docling with macOS OCR...")
         
-        # Handle different file types
-        if input_path.suffix.lower() == '.pdf':
-            # First try direct text extraction from PDF
-            extracted_text = self._try_extract_pdf_text(str(input_path))
+        extracted_content = None
+        
+        # Try Docling with macOS OCR first
+        try:
+            print("🔄 Using Docling with macOS Vision OCR...")
+            result = self.converter.convert(input_path)
+            extracted_content = result.document.export_to_html()
+            print("✅ Docling macOS OCR conversion successful")
             
-            if not extracted_text:
-                print("⚠️  Direct text extraction failed, falling back to OCR...")
-                # Fall back to OCR if direct extraction failed
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    image_files = self._pdf_to_images(str(input_path), temp_dir)
-                    
-                    if not image_files:
-                        raise RuntimeError("Failed to convert PDF to images")
-                    
-                    # OCR each page
-                    all_text = []
-                    for i, image_file in enumerate(image_files, 1):
-                        print(f"Processing page {i}/{len(image_files)}...")
-                        text = self._ocr_image(image_file)
-                        if text:
-                            all_text.append(f"<h2>Page {i}</h2>\n<div class='page-content'><p>{text}</p></div>")
-                    
-                    extracted_text = "\n".join(all_text)
-        else:
-            # Direct OCR for image files
-            extracted_text = self._ocr_image(str(input_path))
-            if extracted_text:
-                extracted_text = f"<div class='content'><p>{extracted_text}</p></div>"
+        except Exception as e:
+            print(f"⚠️  Docling macOS OCR conversion failed: {str(e)}")
+            
+            # Fallback to PyPDF2 for PDFs only
+            if input_path.suffix.lower() == '.pdf':
+                extracted_content = self._fallback_extract_pdf_text(str(input_path))
         
-        if not extracted_text:
-            raise RuntimeError("No text could be extracted from the document")
+        if extracted_content is None:
+            raise RuntimeError(f"All conversion methods failed for {file_path}")
         
-        # Generate HTML
-        html_content = f"""<!DOCTYPE html>
+        # Generate complete HTML document if needed
+        if not extracted_content.strip().startswith('<!DOCTYPE html>'):
+            html_content = f"""<!DOCTYPE html>
 <html>
 <head>
 <title>{input_path.stem}</title>
@@ -285,9 +189,11 @@ if let text = performOCR(on: imagePath) {
 </head>
 <body>
 <h1>{input_path.stem}</h1>
-{extracted_text}
+{extracted_content}
 </body>
 </html>"""
+        else:
+            html_content = extracted_content
         
         # Save HTML file
         output_file = output_dir / f"{input_path.stem}.html"
@@ -299,7 +205,7 @@ if let text = performOCR(on: imagePath) {
     
     def convert_batch(self, file_paths: List[str], output_dir: Optional[str] = None) -> List[str]:
         """
-        Convert multiple files to HTML using macOS OCR
+        Convert multiple files to HTML using macOS OCR via Docling
         
         Args:
             file_paths: List of input file paths
@@ -310,7 +216,7 @@ if let text = performOCR(on: imagePath) {
         """
         html_files = []
         
-        print(f"Starting macOS OCR batch conversion of {len(file_paths)} files...")
+        print(f"Starting Docling macOS OCR batch conversion of {len(file_paths)} files...")
         
         for i, file_path in enumerate(file_paths, 1):
             try:
@@ -321,7 +227,7 @@ if let text = performOCR(on: imagePath) {
                 print(f"❌ Error converting {file_path}: {str(e)}")
                 continue
         
-        print(f"\n✅ macOS OCR batch conversion completed: {len(html_files)}/{len(file_paths)} files successful")
+        print(f"\n✅ Docling macOS OCR batch conversion completed: {len(html_files)}/{len(file_paths)} files successful")
         return html_files
     
     def is_supported_format(self, file_path: str) -> bool:
@@ -331,23 +237,33 @@ if let text = performOCR(on: imagePath) {
     
     def get_system_info(self) -> dict:
         """Get system information for debugging"""
+        import subprocess
+        
         try:
             version_result = subprocess.run(['sw_vers', '-productVersion'], 
                                           capture_output=True, text=True, check=True)
             macos_version = version_result.stdout.strip()
-            
-            swift_result = subprocess.run(['swift', '--version'], 
-                                        capture_output=True, text=True, check=True)
-            swift_version = swift_result.stdout.split('\n')[0]
-            
         except Exception:
             macos_version = "Unknown"
-            swift_version = "Unknown"
         
-        return {
+        info = {
             "platform": sys.platform,
             "macos_version": macos_version,
-            "swift_version": swift_version,
+            "docling_available": DOCLING_AVAILABLE,
+            "ocrmac_available": OCRMAC_AVAILABLE,
+            "pypdf2_available": PyPDF2 is not None,
+            "converter_initialized": hasattr(self, 'converter') and self.converter is not None,
+            "force_full_page_ocr": self.force_full_page_ocr,
             "supported_formats": self.supported_formats,
-            "ocr_method": "macOS Vision Framework"
+            "languages": self.lang,
+            "ocr_method": f"Docling with {'OcrMacOptions' if OCRMAC_AVAILABLE else 'EasyOcrOptions'} on macOS"
         }
+        
+        if DOCLING_AVAILABLE:
+            try:
+                import docling
+                info["docling_version"] = getattr(docling, '__version__', 'unknown')
+            except:
+                info["docling_version"] = 'unknown'
+        
+        return info

@@ -20,4 +20,5 @@ dependencies = [
     "torchvision==0.17.2", 
     "docling",
     "pandas",
+    "ocrmac",  # macOS Vision framework OCR support for docling
 ]
